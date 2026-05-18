@@ -874,13 +874,7 @@ function saveSyncConfig(cfg) {
 }
 
 function getSyncPath(key) {
-  // Deterministic hash → consistent path across devices
-  let h = 0;
-  for (let i = 0; i < key.length; i++) {
-    h = ((h << 5) - h) + key.charCodeAt(i);
-    h |= 0;
-  }
-  return 'adalimumab/' + Math.abs(h).toString(36);
+  return 'adalimumab/' + hashCode(key).toString(36);
 }
 
 function getSyncUrl(cfg) {
@@ -926,23 +920,25 @@ async function cloudDownload(silent) {
   }
   try {
     const resp = await fetch(getSyncUrl(cfg));
-    if (resp.status === 404) {
-      if (!silent) showToast('云端暂无数据，请先上传', 'error');
-      return false;
-    }
     if (resp.status === 401 || resp.status === 403) {
       throw new Error('权限不足：请在 Firebase 中将数据库规则设为测试模式');
     }
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const cloudData = await resp.json();
-    if (!cloudData || !cloudData.injections || !cloudData.purchases) {
-      throw new Error('云端数据格式异常');
+    // Firebase returns null (not 404) for non-existent paths
+    if (cloudData === null || cloudData === undefined) {
+      if (!silent) showToast('云端暂无数据，请在电脑端先上传一次', 'error');
+      updateSyncStatus('云端无数据');
+      return false;
+    }
+    if (!cloudData.injections || !Array.isArray(cloudData.injections) || !cloudData.purchases || !Array.isArray(cloudData.purchases)) {
+      throw new Error('云端数据格式异常，请确认两台设备使用了相同的同步密钥');
     }
     const local = loadData();
     const merged = mergeData(local, cloudData);
     saveData(merged);
     render();
-    if (!silent) showToast('已从云端下载并合并', 'success');
+    if (!silent) showToast('已从云端下载并合并（' + cloudData.injections.length + ' 条记录）', 'success');
     updateSyncStatus('已同步 ' + new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}));
     return true;
   } catch(e) {
@@ -960,8 +956,9 @@ async function testSyncConnection() {
   }
   updateSyncStatus('测试中...');
   try {
-    const testUrl = getSyncUrl(cfg);
-    // Try a simple write-read test with a small ping payload
+    // Use a separate test path to avoid overwriting real data
+    const base = cfg.dbUrl.replace(/\/+$/, '');
+    const testUrl = base + '/adalimumab/_test_' + Math.abs(hashCode(cfg.key)).toString(36) + '.json';
     const ping = { _ping: new Date().toISOString() };
     const putResp = await fetch(testUrl, {
       method: 'PUT',
@@ -986,6 +983,15 @@ async function testSyncConnection() {
     showToast('连接失败：网络异常或地址不正确', 'error');
     updateSyncStatus('连接失败');
   }
+}
+
+function hashCode(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h) + str.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
 }
 
 function toggleAutoSync() {
@@ -1023,7 +1029,7 @@ function startAutoSync() {
       const resp = await fetch(getSyncUrl(cfg));
       if (!resp.ok) return;
       const cloudData = await resp.json();
-      if (!cloudData || !cloudData.injections || !cloudData.purchases) return;
+      if (!cloudData || !Array.isArray(cloudData.injections) || !Array.isArray(cloudData.purchases)) return;
       const local = loadData();
       const merged = mergeData(local, cloudData);
       saveData(merged);
