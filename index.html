@@ -408,15 +408,20 @@ const ORDER_REMIND_DAYS = [2, 1]; // 提前 1~2 天提醒购药
 const DOSES_PER_ORDER = 2;
 
 function loadData() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw) {
-    try { return JSON.parse(raw); } catch(e) {}
-  }
-  return {
-    injections: [],       // [{id, date, site, note}]
-    purchases: [],        // [{id, date, count}]
+  const defaults = {
+    injections: [],
+    purchases: [],
     reminderEnabled: false
   };
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      // Merge with defaults to fill in any missing fields from old data versions
+      return { ...defaults, ...parsed };
+    } catch(e) {}
+  }
+  return defaults;
 }
 
 function saveData(data) {
@@ -945,12 +950,14 @@ async function cloudDownload(silent) {
       updateSyncStatus('云端无数据');
       return false;
     }
-    if (!cloudData.injections || !Array.isArray(cloudData.injections) || !cloudData.purchases || !Array.isArray(cloudData.purchases)) {
-      // Diagnostic: show what was actually received
-      const keys = Object.keys(cloudData || {});
-      const types = keys.map(k => k + ':' + typeof cloudData[k]).join(', ');
-      console.error('云端返回数据:', JSON.stringify(cloudData));
-      throw new Error('云端数据格式异常。返回字段: ' + (keys.length ? keys.join(', ') : '(空对象)') + '；类型: ' + types);
+    // Normalize: fill in any missing fields from old uploads
+    if (!Array.isArray(cloudData.injections)) cloudData.injections = [];
+    if (!Array.isArray(cloudData.purchases)) cloudData.purchases = [];
+    if (typeof cloudData.reminderEnabled !== 'boolean') cloudData.reminderEnabled = false;
+    if (cloudData.injections.length === 0 && cloudData.purchases.length === 0) {
+      if (!silent) showToast('云端暂无有效数据，请在电脑端先上传一次', 'error');
+      updateSyncStatus('云端无数据');
+      return false;
     }
     const local = loadData();
     const merged = mergeData(local, cloudData);
@@ -1047,7 +1054,9 @@ function startAutoSync() {
       const resp = await fetch(getSyncUrl(cfg));
       if (!resp.ok) return;
       const cloudData = await resp.json();
-      if (!cloudData || !Array.isArray(cloudData.injections) || !Array.isArray(cloudData.purchases)) return;
+      if (!cloudData || cloudData === null) return;
+      if (!Array.isArray(cloudData.injections)) cloudData.injections = [];
+      if (!Array.isArray(cloudData.purchases)) cloudData.purchases = [];
       const local = loadData();
       const merged = mergeData(local, cloudData);
       saveData(merged);
