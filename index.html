@@ -891,20 +891,34 @@ async function cloudUpload(silent) {
   try {
     const data = loadData();
     data._syncedAt = new Date().toISOString();
-    const resp = await fetch(getSyncUrl(cfg), {
+    const url = getSyncUrl(cfg);
+    console.log('上传 URL:', url);
+    console.log('上传数据:', JSON.stringify(data).slice(0, 200));
+    const resp = await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (resp.ok) {
-      if (!silent) showToast('已上传到云端', 'success');
-      updateSyncStatus('已同步 ' + new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}));
-      return true;
+    if (!resp.ok) {
+      if (resp.status === 401 || resp.status === 403) {
+        throw new Error('权限不足：请在 Firebase 中将数据库规则设为测试模式');
+      }
+      const errText = await resp.text();
+      console.error('上传响应错误:', resp.status, errText);
+      throw new Error('HTTP ' + resp.status + ': ' + errText.slice(0, 80));
     }
-    if (resp.status === 401 || resp.status === 403) {
-      throw new Error('权限不足：请在 Firebase 中将数据库规则设为测试模式');
+    // Verify: read back to confirm the data was stored correctly
+    const verify = await fetch(url);
+    const stored = await verify.json();
+    console.log('回读校验:', JSON.stringify(stored).slice(0, 200));
+    if (!stored || !Array.isArray(stored.injections) || !Array.isArray(stored.purchases)) {
+      const keys = Object.keys(stored || {});
+      console.error('回读校验失败，Firebase 返回:', JSON.stringify(stored));
+      throw new Error('写入校验失败！返回字段: ' + (keys.length ? keys.join(',') : '(空)') + '。请检查数据库地址是否正确（应包含 -default-rtdb）');
     }
-    throw new Error('HTTP ' + resp.status);
+    if (!silent) showToast('已上传并校验成功（' + stored.injections.length + ' 条记录）', 'success');
+    updateSyncStatus('已同步 ' + new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}));
+    return true;
   } catch(e) {
     if (!silent) showToast('上传失败：' + e.message, 'error');
     updateSyncStatus('同步失败');
@@ -932,7 +946,11 @@ async function cloudDownload(silent) {
       return false;
     }
     if (!cloudData.injections || !Array.isArray(cloudData.injections) || !cloudData.purchases || !Array.isArray(cloudData.purchases)) {
-      throw new Error('云端数据格式异常，请确认两台设备使用了相同的同步密钥');
+      // Diagnostic: show what was actually received
+      const keys = Object.keys(cloudData || {});
+      const types = keys.map(k => k + ':' + typeof cloudData[k]).join(', ');
+      console.error('云端返回数据:', JSON.stringify(cloudData));
+      throw new Error('云端数据格式异常。返回字段: ' + (keys.length ? keys.join(', ') : '(空对象)') + '；类型: ' + types);
     }
     const local = loadData();
     const merged = mergeData(local, cloudData);
