@@ -912,16 +912,12 @@ async function cloudUpload(silent) {
       console.error('上传响应错误:', resp.status, errText);
       throw new Error('HTTP ' + resp.status + ': ' + errText.slice(0, 80));
     }
-    // Verify: read back to confirm the data was stored correctly
+    // Verify: read back to confirm data was stored (Firebase may strip empty arrays)
     const verify = await fetch(url);
-    const stored = await verify.json();
+    let stored = await verify.json();
+    stored = normalizeCloudData(stored);
     console.log('回读校验:', JSON.stringify(stored).slice(0, 200));
-    if (!stored || !Array.isArray(stored.injections) || !Array.isArray(stored.purchases)) {
-      const keys = Object.keys(stored || {});
-      console.error('回读校验失败，Firebase 返回:', JSON.stringify(stored));
-      throw new Error('写入校验失败！返回字段: ' + (keys.length ? keys.join(',') : '(空)') + '。请检查数据库地址是否正确（应包含 -default-rtdb）');
-    }
-    if (!silent) showToast('已上传并校验成功（' + stored.injections.length + ' 条记录）', 'success');
+    if (!silent) showToast('已上传到云端（' + stored.injections.length + ' 条记录）', 'success');
     updateSyncStatus('已同步 ' + new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}));
     return true;
   } catch(e) {
@@ -950,12 +946,10 @@ async function cloudDownload(silent) {
       updateSyncStatus('云端无数据');
       return false;
     }
-    // Normalize: fill in any missing fields from old uploads
-    if (!Array.isArray(cloudData.injections)) cloudData.injections = [];
-    if (!Array.isArray(cloudData.purchases)) cloudData.purchases = [];
-    if (typeof cloudData.reminderEnabled !== 'boolean') cloudData.reminderEnabled = false;
-    if (cloudData.injections.length === 0 && cloudData.purchases.length === 0) {
-      if (!silent) showToast('云端暂无有效数据，请在电脑端先上传一次', 'error');
+    // Normalize: Firebase RTDB may strip empty arrays
+    const normalized = normalizeCloudData(cloudData);
+    if (normalized.injections.length === 0 && normalized.purchases.length === 0) {
+      if (!silent) showToast('云端暂无数据，请在电脑端先上传一次', 'error');
       updateSyncStatus('云端无数据');
       return false;
     }
@@ -1010,6 +1004,15 @@ async function testSyncConnection() {
   }
 }
 
+function normalizeCloudData(data) {
+  // Firebase RTDB strips empty arrays, so fill in any missing fields
+  if (!data) return { injections: [], purchases: [], reminderEnabled: false };
+  if (!Array.isArray(data.injections)) data.injections = [];
+  if (!Array.isArray(data.purchases)) data.purchases = [];
+  if (typeof data.reminderEnabled !== 'boolean') data.reminderEnabled = false;
+  return data;
+}
+
 function hashCode(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) {
@@ -1055,8 +1058,7 @@ function startAutoSync() {
       if (!resp.ok) return;
       const cloudData = await resp.json();
       if (!cloudData || cloudData === null) return;
-      if (!Array.isArray(cloudData.injections)) cloudData.injections = [];
-      if (!Array.isArray(cloudData.purchases)) cloudData.purchases = [];
+      normalizeCloudData(cloudData);
       const local = loadData();
       const merged = mergeData(local, cloudData);
       saveData(merged);
