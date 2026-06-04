@@ -293,7 +293,7 @@
       <div class="sub" id="nextInjectCountdown"></div>
     </div>
     <div class="stat-card" id="stockCard">
-      <div class="label">剩余药品</div>
+      <div class="label">剩余药品 <span style="cursor:pointer;font-size:14px" onclick="showStockEditor()" title="手动修正库存">✎</span></div>
       <div class="value" id="stockCount">--</div>
       <div class="sub">支</div>
     </div>
@@ -301,6 +301,21 @@
 
   <!-- Order reminder alert -->
   <div id="orderAlert" style="display:none"></div>
+
+  <!-- Stock editor (hidden by default) -->
+  <div id="stockEditor" style="display:none;background:var(--card);border-radius:var(--radius);padding:16px 20px;box-shadow:var(--shadow);margin-bottom:16px;text-align:center">
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">当前库存 <strong id="stockEditorCurrent">0</strong> 支，手动设为：</p>
+    <div style="display:flex;gap:8px;align-items:center;justify-content:center">
+      <button class="btn btn-outline btn-sm" onclick="adjustStock(-1)" style="min-width:40px">-1</button>
+      <input type="number" id="stockEditorInput" min="0" style="width:80px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:20px;font-weight:700;text-align:center" onkeydown="if(event.key==='Enter')applyStockEditor()">
+      <button class="btn btn-outline btn-sm" onclick="adjustStock(1)" style="min-width:40px">+1</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;justify-content:center">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('stockEditor').style.display='none'">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="applyStockEditor()">确认修改</button>
+    </div>
+    <p style="font-size:11px;color:var(--text-secondary);margin-top:8px">修改会生成一条"手动修正"记录，可在订购记录中撤销。</p>
+  </div>
 
   <!-- Log injection -->
   <div class="card">
@@ -332,34 +347,6 @@
     <div id="reminderStatus" style="margin-top:10px;font-size:13px;color:var(--text-secondary)"></div>
   </div>
 
-  <!-- Calendar Integration -->
-  <div class="card">
-    <h2>📅 日历提醒（系统级）</h2>
-    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">
-      将注射计划同步到手机原生日历，即使网页关闭也能收到系统弹窗提醒。
-    </p>
-    <div class="actions-row" style="flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" onclick="addToCalendarRecurring()" style="flex:1">
-        添加到日历（每21天重复）
-      </button>
-    </div>
-    <div class="actions-row" style="flex-wrap:wrap;margin-top:6px">
-      <button class="btn btn-outline btn-sm" onclick="addToCalendarSingle()" style="flex:1">
-        仅添加下次注射提醒
-      </button>
-    </div>
-    <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
-      <input type="checkbox" id="autoCalendarToggle" onchange="onAutoCalendarToggle()" style="width:18px;height:18px">
-      <label for="autoCalendarToggle" style="font-size:13px;color:var(--text);cursor:pointer">
-        记录注射后自动下载最新日历文件
-      </label>
-    </div>
-    <p style="font-size:11px;color:var(--text-secondary);margin-top:8px">
-      <strong>开启后：</strong>每次记录注射 → 自动下载新日历文件 → 点一下即可更新日历。
-      日历始终保持与注射记录同步。
-    </p>
-  </div>
-
   <!-- Progress -->
   <div class="card">
     <h2>周期进度</h2>
@@ -377,6 +364,14 @@
     <h2>注射记录</h2>
     <div id="historyList">
       <div class="empty-state">暂无记录，请先记录一次注射</div>
+    </div>
+  </div>
+
+  <!-- Purchase & Stock History -->
+  <div class="card">
+    <h2>库存变动记录</h2>
+    <div id="purchaseList">
+      <div class="empty-state">暂无变动记录</div>
     </div>
   </div>
 
@@ -612,8 +607,31 @@ function updateReminderUI(data) {
 }
 
 function updatePurchaseInfo(data) {
-  // Simple: show purchase summary in the injection card subtitle area isn't ideal.
-  // We already show stock. Keep it simple.
+  const purchaseDiv = document.getElementById('purchaseList');
+  const sorted = [...data.purchases].sort((a, b) => new Date(b.date) - new Date(a.date));
+  if (sorted.length === 0) {
+    purchaseDiv.innerHTML = '<div class="empty-state">暂无变动记录</div>';
+    return;
+  }
+  purchaseDiv.innerHTML = sorted.map(p => {
+    const d = new Date(p.date + 'T00:00:00');
+    const isManual = p.type === 'manual_adjustment';
+    const delta = p.count;
+    const prefix = delta >= 0 ? '+' : '';
+    return `
+      <div class="history-item" style="${isManual ? 'background:#fef5e7;margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:8px' : ''}">
+        <div>
+          <div class="date">${prefix}${delta} 支</div>
+          <div class="meta">
+            ${formatDate(d)}
+            ${p.note ? ' · ' + p.note : ''}
+            ${isManual ? ' · <span class="badge badge-warn">手动修正</span>' : ' · <span class="badge badge-success">订购</span>'}
+          </div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="deletePurchase('${p.id}')" title="撤销">撤销</button>
+      </div>
+    `;
+  }).join('');
 }
 
 // ── Actions ──
@@ -645,11 +663,6 @@ function logInjection() {
   render();
   scheduleNotification(data);
   triggerSyncAfterChange();
-
-  // Auto-download updated calendar file if enabled
-  if (localStorage.getItem('adalimumab_auto_calendar') === 'true') {
-    setTimeout(() => addToCalendarRecurring(), 500);
-  }
 }
 
 function deleteInjection(id) {
@@ -661,17 +674,76 @@ function deleteInjection(id) {
   triggerSyncAfterChange();
 }
 
+function deletePurchase(id) {
+  const data = loadData();
+  const p = data.purchases.find(p => p.id === id);
+  const typeLabel = (p && p.type === 'manual_adjustment') ? '手动修正' : '订购';
+  if (!confirm('确定要撤销这条' + typeLabel + '记录吗？库存数量会随之变化。')) return;
+  data.purchases = data.purchases.filter(p => p.id !== id);
+  saveData(data);
+  render();
+  showToast('已撤销' + typeLabel + '记录', 'success');
+  triggerSyncAfterChange();
+}
+
 function logMedicinePurchase() {
   const count = DOSES_PER_ORDER;
   const data = loadData();
   data.purchases.push({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     date: new Date().toISOString().slice(0, 10),
-    count: count
+    count: count,
+    type: 'purchase'
   });
   saveData(data);
   render();
   showToast('已记录订购 ' + count + ' 支药品', 'success');
+  triggerSyncAfterChange();
+}
+
+// ── Stock Editor ──
+function showStockEditor() {
+  const data = loadData();
+  const stock = getStock(data);
+  document.getElementById('stockEditorCurrent').textContent = stock;
+  document.getElementById('stockEditorInput').value = stock;
+  document.getElementById('stockEditor').style.display = 'block';
+  setTimeout(() => document.getElementById('stockEditorInput').focus(), 100);
+}
+
+function adjustStock(delta) {
+  const input = document.getElementById('stockEditorInput');
+  let val = parseInt(input.value) || 0;
+  val = Math.max(0, val + delta);
+  input.value = val;
+}
+
+function applyStockEditor() {
+  const newStock = parseInt(document.getElementById('stockEditorInput').value);
+  if (isNaN(newStock) || newStock < 0) {
+    showToast('请输入有效的库存数量（≥0）', 'error');
+    return;
+  }
+  const data = loadData();
+  const currentStock = getStock(data);
+  const delta = newStock - currentStock;
+
+  if (delta === 0) {
+    document.getElementById('stockEditor').style.display = 'none';
+    return;
+  }
+
+  data.purchases.push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    date: new Date().toISOString().slice(0, 10),
+    count: delta,
+    type: 'manual_adjustment',
+    note: '手动修正：从 ' + currentStock + ' 调整为 ' + newStock
+  });
+  saveData(data);
+  document.getElementById('stockEditor').style.display = 'none';
+  render();
+  showToast('库存已修正为 ' + newStock + ' 支', 'success');
   triggerSyncAfterChange();
 }
 
@@ -1183,121 +1255,6 @@ function initSyncUI() {
   }
 }
 
-// ── Calendar Integration ──
-function generateICS(recurring, startDateStr) {
-  const d = new Date(startDateStr + 'T00:00:00');
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const dtStart = y + m + day;
-
-  const dEnd = new Date(d);
-  dEnd.setDate(dEnd.getDate() + 1);
-  const ye = dEnd.getFullYear();
-  const me = String(dEnd.getMonth() + 1).padStart(2, '0');
-  const de = String(dEnd.getDate()).padStart(2, '0');
-  const dtEnd = ye + me + de;
-
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//AdalimumabTracker//CN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'BEGIN:VEVENT',
-    'DTSTART;VALUE=DATE:' + dtStart,
-    'DTEND;VALUE=DATE:' + dtEnd,
-    'SUMMARY:💉 阿达木单抗注射',
-    'DESCRIPTION:每21天注射一次阿达木单抗。请按时完成注射。'
-  ];
-
-  if (recurring) {
-    lines.push('RRULE:FREQ=DAILY;INTERVAL=21');
-  }
-
-  lines.push(
-    'BEGIN:VALARM',
-    'TRIGGER:-PT3D',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:还有3天需要注射阿达木单抗，请提前准备药品。',
-    'END:VALARM',
-    'BEGIN:VALARM',
-    'TRIGGER:-PT30M',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:今天需要注射阿达木单抗！',
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR'
-  );
-
-  return lines.join('\r\n');
-}
-
-function downloadICS(content, filename) {
-  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function getNextInjectionDateOrFuture(data) {
-  const next = getNextInjectionDate(data);
-  if (!next) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (next >= today) return next;
-  // If the scheduled date has passed, project to next cycle
-  const diffMs = today.getTime() - next.getTime();
-  const daysPast = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const cycles = Math.floor(daysPast / INTERVAL_DAYS) + 1;
-  const projected = new Date(next);
-  projected.setDate(projected.getDate() + cycles * INTERVAL_DAYS);
-  return projected;
-}
-
-function addToCalendarRecurring() {
-  const data = loadData();
-  const startDate = getNextInjectionDateOrFuture(data);
-  if (!startDate) {
-    showToast('请先记录至少一次注射', 'error');
-    return;
-  }
-  const dateStr = startDate.toISOString().slice(0, 10);
-  const ics = generateICS(true, dateStr);
-  downloadICS(ics, 'adalimumab-recurring.ics');
-  showToast('日历文件已下载，点击文件添加到日历', 'success');
-}
-
-function addToCalendarSingle() {
-  const data = loadData();
-  const startDate = getNextInjectionDateOrFuture(data);
-  if (!startDate) {
-    showToast('请先记录至少一次注射', 'error');
-    return;
-  }
-  const dateStr = startDate.toISOString().slice(0, 10);
-  const ics = generateICS(false, dateStr);
-  downloadICS(ics, 'adalimumab-next-injection.ics');
-  showToast('日历文件已下载，点击文件添加到日历', 'success');
-}
-
-function onAutoCalendarToggle() {
-  const checked = document.getElementById('autoCalendarToggle').checked;
-  localStorage.setItem('adalimumab_auto_calendar', checked ? 'true' : 'false');
-}
-
-function initCalendarUI() {
-  const toggle = document.getElementById('autoCalendarToggle');
-  if (toggle) {
-    toggle.checked = localStorage.getItem('adalimumab_auto_calendar') === 'true';
-  }
-}
-
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
   // Set default date to today
@@ -1306,7 +1263,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Init sync UI
   initSyncUI();
-  initCalendarUI();
 
   // Check and trigger notifications on load
   const data = loadData();
