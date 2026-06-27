@@ -187,6 +187,64 @@
   .badge-warn { background: var(--warning-light); color: #92400e; }
   .badge-danger { background: var(--danger-light); color: #991b1b; }
   .badge-success { background: var(--success-light); color: #166534; }
+  .badge-neutral { background: #f0f0f0; color: #666; }
+
+  /* Modal overlay */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 24px;
+    width: 90%;
+    max-width: 420px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  }
+  .modal-box h3 { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
+  .modal-box .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  .modal-box .btn-row .btn { flex: 1; }
+
+  /* Stock edit button */
+  .stock-edit-btn {
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    vertical-align: middle;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+  .stock-edit-btn:hover { opacity: 1; background: var(--border); }
+
+  /* Inventory log */
+  .invlog-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .invlog-item:last-child { border-bottom: none; }
+  .invlog-item .invlog-date { width: 90px; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; }
+  .invlog-item .invlog-type { font-size: 12px; padding: 2px 8px; border-radius: 4px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .invlog-type.in  { background: var(--success-light); color: #166534; }
+  .invlog-type.out { background: var(--danger-light);  color: #991b1b; }
+  .invlog-type.adj { background: var(--primary-light); color: #1e40af; }
+  .invlog-item .invlog-detail { flex: 1; font-size: 13px; color: var(--text); min-width: 0; }
+  .invlog-item .invlog-balance { text-align: right; flex-shrink: 0; }
+  .invlog-item .invlog-balance .val { font-size: 18px; font-weight: 700; }
 
   /* Toast */
   .toast {
@@ -293,7 +351,7 @@
       <div class="sub" id="nextInjectCountdown"></div>
     </div>
     <div class="stat-card" id="stockCard">
-      <div class="label">剩余药品 <span style="cursor:pointer;font-size:14px" onclick="showStockEditor()" title="手动修正库存">✎</span></div>
+      <div class="label">剩余药品 <button class="stock-edit-btn" onclick="showStockAdjustModal()" title="手动调整库存">✎</button></div>
       <div class="value" id="stockCount">--</div>
       <div class="sub">支</div>
     </div>
@@ -301,21 +359,6 @@
 
   <!-- Order reminder alert -->
   <div id="orderAlert" style="display:none"></div>
-
-  <!-- Stock editor (hidden by default) -->
-  <div id="stockEditor" style="display:none;background:var(--card);border-radius:var(--radius);padding:16px 20px;box-shadow:var(--shadow);margin-bottom:16px;text-align:center">
-    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">当前库存 <strong id="stockEditorCurrent">0</strong> 支，手动设为：</p>
-    <div style="display:flex;gap:8px;align-items:center;justify-content:center">
-      <button class="btn btn-outline btn-sm" onclick="adjustStock(-1)" style="min-width:40px">-1</button>
-      <input type="number" id="stockEditorInput" min="0" style="width:80px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:20px;font-weight:700;text-align:center" onkeydown="if(event.key==='Enter')applyStockEditor()">
-      <button class="btn btn-outline btn-sm" onclick="adjustStock(1)" style="min-width:40px">+1</button>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:10px;justify-content:center">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('stockEditor').style.display='none'">取消</button>
-      <button class="btn btn-primary btn-sm" onclick="applyStockEditor()">确认修改</button>
-    </div>
-    <p style="font-size:11px;color:var(--text-secondary);margin-top:8px">修改会生成一条"手动修正"记录，可在订购记录中撤销。</p>
-  </div>
 
   <!-- Log injection -->
   <div class="card">
@@ -367,39 +410,38 @@
     </div>
   </div>
 
-  <!-- Purchase & Stock History -->
+  <!-- Inventory Change Log -->
   <div class="card">
     <h2>库存变动记录</h2>
-    <div id="purchaseList">
-      <div class="empty-state">暂无变动记录</div>
+    <div id="inventoryLog">
+      <div class="empty-state">暂无库存变动记录</div>
     </div>
   </div>
 
   <!-- Cloud Sync -->
   <div class="card">
-    <h2>云端同步 <span style="font-size:12px;font-weight:400;color:var(--primary);cursor:pointer" onclick="toggleSetupGuide()" id="setupGuideLink">[设置指南]</span></h2>
-    <div id="setupGuide" style="display:none;background:var(--primary-light);border-radius:8px;padding:14px;margin-bottom:14px;font-size:13px;line-height:1.7">
-      <strong>首次使用？两步完成设置：</strong><br>
-      1. 打开 <a href="https://console.firebase.google.com" target="_blank" style="color:var(--primary)">Firebase 控制台</a>，点击"添加项目"，按向导创建项目。<br>
-      2. 左侧菜单 → "Realtime Database" → "创建数据库" → 位置选 "us-central1" → 安全规则选"测试模式"。<br>
-      3. 复制数据库 URL（格式：<code>https://xxx-default-rtdb.firebaseio.com</code>），粘贴到下方。<br>
-      <span style="color:#92400e"><strong>注意：</strong>安全规则必须设为测试模式（允许读写），否则同步会失败。</span>
+    <h2>☁️ GitHub Gist 云端同步</h2>
+      <div id="gistSetupGuide" style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.7">
+      数据存储在您自己的 GitHub 账号（免费、永久）。首次使用 3 步：<br>
+      1. <a href="https://github.com" target="_blank" style="color:var(--primary)">登录 GitHub</a>（没有账号可免费注册）<br>
+      2. <a href="https://github.com/settings/tokens/new" target="_blank" style="color:var(--primary)"><strong>点此打开 Token 创建页</strong></a> → Note 填"追踪器" → Expiration 选 <strong>No expiration</strong> → 只勾选 <strong>gist</strong> → 点底部 Generate token<br>
+      3. 复制生成的 <code>ghp_...</code> Token 粘贴到下方，点击"⬆️ 上传到云端"即可
     </div>
-    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">
-      设置相同的密钥和数据库地址，多台设备自动同步。密钥相同 = 数据相通。
-    </p>
-    <div style="margin-bottom:8px">
-      <label style="font-size:12px;color:var(--text-secondary)">Firebase 数据库地址</label>
-      <input type="text" id="dbUrl" placeholder="https://你的项目-default-rtdb.firebaseio.com" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none;margin-top:2px" oninput="onDbUrlChange()">
+    <div class="form-group" style="margin-bottom:8px">
+      <label style="font-size:12px;font-weight:600;color:var(--text-secondary)">GitHub Personal Access Token（保存在本地，不会上传）</label>
+      <div style="display:flex;gap:8px">
+        <input type="password" id="ghToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none" oninput="onGhTokenChange()">
+        <button class="btn btn-outline btn-sm" onclick="toggleShowToken()" id="showTokenBtn" title="显示/隐藏 Token" style="white-space:nowrap">显示</button>
+      </div>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <input type="text" id="syncKey" placeholder="同步密钥（任意字符，如：myfamily2024）" style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none" oninput="onSyncKeyChange()">
-      <button class="btn btn-outline btn-sm" onclick="toggleAutoSync()" id="autoSyncBtn" style="white-space:nowrap">启用自动同步</button>
+    <div class="form-group" style="margin-bottom:12px">
+      <label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Gist ID（首次上传后自动填入，或粘贴已有 Gist ID）</label>
+      <input type="text" id="gistId" placeholder="（首次上传后自动生成）" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;font-family:monospace" oninput="onGistIdChange()">
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" onclick="cloudUpload()">上传到云端</button>
-      <button class="btn btn-outline btn-sm" onclick="cloudDownload()">从云端下载</button>
-      <button class="btn btn-outline btn-sm" onclick="testSyncConnection()">测试连接</button>
+      <button class="btn btn-outline btn-sm" onclick="cloudUpload()">⬆️ 上传到云端</button>
+      <button class="btn btn-outline btn-sm" onclick="cloudDownload()">⬇️ 从云端下载</button>
+      <button class="btn btn-outline btn-sm" onclick="toggleAutoSync()" id="autoSyncBtn">启用自动同步</button>
       <span id="syncStatus" style="font-size:12px;color:var(--text-secondary)"></span>
     </div>
     <div id="syncInfo" style="font-size:12px;color:var(--text-secondary);margin-top:6px"></div>
@@ -419,8 +461,27 @@
   </div>
 
   <footer>
-    数据存储在浏览器本地 · 云端同步基于 Firebase Realtime Database · 可在电脑与手机间实时同步
+    数据存储在浏览器本地 · 云同步由 GitHub Gist 提供 · 数据归您所有，永久免费
   </footer>
+</div>
+
+<!-- Stock Adjustment Modal -->
+<div class="modal-overlay" id="stockAdjustModal">
+  <div class="modal-box">
+    <h3>手动调整库存</h3>
+    <div class="form-group">
+      <label>调整数量（+ 入库 / − 消耗）</label>
+      <input type="number" id="adjAmount" placeholder="例如: 2 或 -1" style="width:100%">
+    </div>
+    <div class="form-group">
+      <label>调整原因</label>
+      <input type="text" id="adjReason" placeholder="例如：补录库存、药品过期、亲友赠送" maxlength="30">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline btn-sm" onclick="closeStockAdjustModal()">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="applyStockAdjust()">确认调整</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -431,20 +492,16 @@ const ORDER_REMIND_DAYS = [2, 1]; // 提前 1~2 天提醒购药
 const DOSES_PER_ORDER = 2;
 
 function loadData() {
-  const defaults = {
-    injections: [],
-    purchases: [],
-    reminderEnabled: false
-  };
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      // Merge with defaults to fill in any missing fields from old data versions
-      return { ...defaults, ...parsed };
-    } catch(e) {}
+    try { return JSON.parse(raw); } catch(e) {}
   }
-  return defaults;
+  return {
+    injections: [],       // [{id, date, site, note}]
+    purchases: [],        // [{id, date, count}]
+    inventoryAdjustments: [], // [{id, date, change: +N or -N, reason}]
+    reminderEnabled: false
+  };
 }
 
 function saveData(data) {
@@ -454,7 +511,8 @@ function saveData(data) {
 function getStock(data) {
   const totalPurchased = data.purchases.reduce((sum, p) => sum + p.count, 0);
   const totalUsed = data.injections.length;
-  return Math.max(0, totalPurchased - totalUsed);
+  const totalAdjusted = (data.inventoryAdjustments || []).reduce((sum, a) => sum + a.change, 0);
+  return Math.max(0, totalPurchased - totalUsed + totalAdjusted);
 }
 
 function getLastInjection(data) {
@@ -590,6 +648,9 @@ function render() {
 
   // Purchases info
   updatePurchaseInfo(data);
+
+  // Inventory change log
+  renderInventoryLog(data);
 }
 
 function updateReminderUI(data) {
@@ -607,28 +668,93 @@ function updateReminderUI(data) {
 }
 
 function updatePurchaseInfo(data) {
-  const purchaseDiv = document.getElementById('purchaseList');
-  const sorted = [...data.purchases].sort((a, b) => new Date(b.date) - new Date(a.date));
-  if (sorted.length === 0) {
-    purchaseDiv.innerHTML = '<div class="empty-state">暂无变动记录</div>';
+  // Simple: show purchase summary in the injection card subtitle area isn't ideal.
+  // We already show stock. Keep it simple.
+}
+
+function renderInventoryLog(data) {
+  const div = document.getElementById('inventoryLog');
+  if (!div) return;
+
+  // Build all inventory events
+  const events = [];
+
+  // Purchases
+  for (const p of data.purchases) {
+    events.push({
+      id: p.id,
+      date: p.date,
+      type: 'in',
+      typeLabel: '订购入库',
+      change: '+' + p.count,
+      detail: '订购 ' + p.count + ' 支药品',
+      ts: new Date(p.date + 'T00:00:00').getTime()
+    });
+  }
+
+  // Injections
+  for (const inj of data.injections) {
+    events.push({
+      id: inj.id,
+      date: inj.date,
+      type: 'out',
+      typeLabel: '注射消耗',
+      change: '−1',
+      detail: '注射' + (inj.site ? '（' + inj.site + '）' : ''),
+      ts: new Date(inj.date + 'T00:00:00').getTime()
+    });
+  }
+
+  // Manual adjustments
+  for (const adj of (data.inventoryAdjustments || [])) {
+    const sign = adj.change >= 0 ? '+' : '';
+    events.push({
+      id: adj.id,
+      date: adj.date,
+      type: 'adj',
+      typeLabel: '手动调整',
+      change: sign + adj.change,
+      detail: adj.reason || '手动调整',
+      ts: new Date(adj.date + 'T00:00:00').getTime()
+    });
+  }
+
+  if (events.length === 0) {
+    div.innerHTML = '<div class="empty-state">暂无库存变动记录</div>';
     return;
   }
-  purchaseDiv.innerHTML = sorted.map(p => {
-    const d = new Date(p.date + 'T00:00:00');
-    const isManual = p.type === 'manual_adjustment';
-    const delta = p.count;
-    const prefix = delta >= 0 ? '+' : '';
+
+  // Sort by date desc, then by type priority (purchases first, then injections, then adjustments on same day)
+  events.sort((a, b) => {
+    if (a.ts !== b.ts) return b.ts - a.ts;
+    const order = { in: 1, adj: 2, out: 3 };
+    return (order[a.type] || 0) - (order[b.type] || 0);
+  });
+
+  // Calculate running balance from oldest to newest
+  let balance = 0;
+  const eventsForBalance = [...events].reverse();
+  const balanceMap = {};
+  for (const e of eventsForBalance) {
+    if (e.type === 'in') balance += parseInt(e.change);
+    else if (e.type === 'out') balance -= 1;
+    else if (e.type === 'adj') balance += parseInt(e.change);
+    balanceMap[e.id] = balance;
+  }
+
+  div.innerHTML = events.map(e => {
+    const d = new Date(e.date + 'T00:00:00');
+    const dateStr = (d.getMonth()+1) + '/' + d.getDate();
+    const bal = balanceMap[e.id];
     return `
-      <div class="history-item" style="${isManual ? 'background:#fef5e7;margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:8px' : ''}">
-        <div>
-          <div class="date">${prefix}${delta} 支</div>
-          <div class="meta">
-            ${formatDate(d)}
-            ${p.note ? ' · ' + p.note : ''}
-            ${isManual ? ' · <span class="badge badge-warn">手动修正</span>' : ' · <span class="badge badge-success">订购</span>'}
-          </div>
-        </div>
-        <button class="btn btn-danger btn-sm" onclick="deletePurchase('${p.id}')" title="撤销">撤销</button>
+      <div class="invlog-item">
+        <span class="invlog-date">${dateStr}</span>
+        <span class="invlog-type ${e.type}">${e.typeLabel}</span>
+        <span class="invlog-detail">${e.detail}</span>
+        <span class="invlog-balance">
+          <span style="font-size:12px;color:var(--text-secondary);display:block">${e.change}</span>
+          <span class="val">${bal}</span>
+        </span>
       </div>
     `;
   }).join('');
@@ -674,26 +800,13 @@ function deleteInjection(id) {
   triggerSyncAfterChange();
 }
 
-function deletePurchase(id) {
-  const data = loadData();
-  const p = data.purchases.find(p => p.id === id);
-  const typeLabel = (p && p.type === 'manual_adjustment') ? '手动修正' : '订购';
-  if (!confirm('确定要撤销这条' + typeLabel + '记录吗？库存数量会随之变化。')) return;
-  data.purchases = data.purchases.filter(p => p.id !== id);
-  saveData(data);
-  render();
-  showToast('已撤销' + typeLabel + '记录', 'success');
-  triggerSyncAfterChange();
-}
-
 function logMedicinePurchase() {
   const count = DOSES_PER_ORDER;
   const data = loadData();
   data.purchases.push({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     date: new Date().toISOString().slice(0, 10),
-    count: count,
-    type: 'purchase'
+    count: count
   });
   saveData(data);
   render();
@@ -701,51 +814,53 @@ function logMedicinePurchase() {
   triggerSyncAfterChange();
 }
 
-// ── Stock Editor ──
-function showStockEditor() {
-  const data = loadData();
-  const stock = getStock(data);
-  document.getElementById('stockEditorCurrent').textContent = stock;
-  document.getElementById('stockEditorInput').value = stock;
-  document.getElementById('stockEditor').style.display = 'block';
-  setTimeout(() => document.getElementById('stockEditorInput').focus(), 100);
+// ── Stock Adjustment Modal ──
+function showStockAdjustModal() {
+  const modal = document.getElementById('stockAdjustModal');
+  if (modal) {
+    modal.classList.add('active');
+    document.getElementById('adjAmount').value = '';
+    document.getElementById('adjReason').value = '';
+    document.getElementById('adjAmount').focus();
+  }
 }
 
-function adjustStock(delta) {
-  const input = document.getElementById('stockEditorInput');
-  let val = parseInt(input.value) || 0;
-  val = Math.max(0, val + delta);
-  input.value = val;
+function closeStockAdjustModal() {
+  const modal = document.getElementById('stockAdjustModal');
+  if (modal) modal.classList.remove('active');
 }
 
-function applyStockEditor() {
-  const newStock = parseInt(document.getElementById('stockEditorInput').value);
-  if (isNaN(newStock) || newStock < 0) {
-    showToast('请输入有效的库存数量（≥0）', 'error');
+function applyStockAdjust() {
+  const amountInput = document.getElementById('adjAmount');
+  const reasonInput = document.getElementById('adjReason');
+  const change = parseInt(amountInput.value);
+  if (isNaN(change) || change === 0) {
+    showToast('请输入有效的调整数量（非零整数）', 'error');
     return;
   }
+  const reason = reasonInput.value.trim() || (change > 0 ? '手动入库' : '手动消耗');
   const data = loadData();
-  const currentStock = getStock(data);
-  const delta = newStock - currentStock;
-
-  if (delta === 0) {
-    document.getElementById('stockEditor').style.display = 'none';
-    return;
-  }
-
-  data.purchases.push({
+  if (!data.inventoryAdjustments) data.inventoryAdjustments = [];
+  data.inventoryAdjustments.push({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     date: new Date().toISOString().slice(0, 10),
-    count: delta,
-    type: 'manual_adjustment',
-    note: '手动修正：从 ' + currentStock + ' 调整为 ' + newStock
+    change: change,
+    reason: reason
   });
   saveData(data);
-  document.getElementById('stockEditor').style.display = 'none';
+  closeStockAdjustModal();
   render();
-  showToast('库存已修正为 ' + newStock + ' 支', 'success');
+  const sign = change > 0 ? '+' : '';
+  showToast('库存已调整 ' + sign + change + ' 支', 'success');
   triggerSyncAfterChange();
 }
+
+// Close modal on overlay click
+document.addEventListener('click', function(e) {
+  if (e.target.id === 'stockAdjustModal') {
+    closeStockAdjustModal();
+  }
+});
 
 function toggleReminder() {
   const data = loadData();
@@ -903,9 +1018,11 @@ function importData(event) {
 function mergeData(current, imported) {
   const existIds = new Set(current.injections.map(i => i.id));
   const existPurchIds = new Set(current.purchases.map(p => p.id));
+  const existAdjIds = new Set((current.inventoryAdjustments || []).map(a => a.id));
   const merged = {
     injections: [...current.injections],
     purchases: [...current.purchases],
+    inventoryAdjustments: [...(current.inventoryAdjustments || [])],
     reminderEnabled: current.reminderEnabled || imported.reminderEnabled
   };
   for (const inj of imported.injections) {
@@ -916,6 +1033,11 @@ function mergeData(current, imported) {
   for (const p of imported.purchases) {
     if (!existPurchIds.has(p.id)) {
       merged.purchases.push(p);
+    }
+  }
+  for (const adj of (imported.inventoryAdjustments || [])) {
+    if (!existAdjIds.has(adj.id)) {
+      merged.inventoryAdjustments.push(adj);
     }
   }
   return merged;
@@ -971,62 +1093,107 @@ function importSyncCode() {
   }
 }
 
-// ── Cloud Sync ──
+// ── Cloud Sync (via GitHub Gist — free, permanent, owned by user) ──
+// Data is stored in the user's own GitHub account as a secret Gist.
+// No third-party service dependency. Works as long as GitHub exists.
+
+const GIST_FILENAME = 'adalimumab-tracker.json';
+const GIST_API = 'https://api.github.com/gists';
+
 function getSyncConfig() {
   const raw = localStorage.getItem('adalimumab_sync_cfg');
   if (raw) {
     try { return JSON.parse(raw); } catch(e) {}
   }
-  return { key: '', autoSync: false, dbUrl: '' };
+  return { token: '', gistId: '', autoSync: false };
 }
 function saveSyncConfig(cfg) {
   localStorage.setItem('adalimumab_sync_cfg', JSON.stringify(cfg));
 }
 
-function getSyncPath(key) {
-  return 'adalimumab/' + hashCode(key).toString(36);
+function toggleShowToken() {
+  const input = document.getElementById('ghToken');
+  const btn = document.getElementById('showTokenBtn');
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '隐藏';
+  } else {
+    input.type = 'password';
+    btn.textContent = '显示';
+  }
 }
 
-function getSyncUrl(cfg) {
-  const base = cfg.dbUrl.replace(/\/+$/, '');
-  return base + '/' + getSyncPath(cfg.key) + '.json';
+function onGhTokenChange() {
+  const token = document.getElementById('ghToken').value.trim();
+  const cfg = getSyncConfig();
+  cfg.token = token;
+  if (!token) { cfg.autoSync = false; stopAutoSync(); updateAutoSyncUI(cfg); }
+  saveSyncConfig(cfg);
+}
+
+function onGistIdChange() {
+  const id = document.getElementById('gistId').value.trim();
+  const cfg = getSyncConfig();
+  cfg.gistId = id;
+  saveSyncConfig(cfg);
 }
 
 async function cloudUpload(silent) {
   const cfg = getSyncConfig();
-  if (!cfg.key || !cfg.dbUrl) {
-    if (!silent) showToast('请先设置同步密钥和数据库地址', 'error');
+  if (!cfg.token) {
+    if (!silent) showToast('请先填写 GitHub Token', 'error');
     return false;
   }
   try {
     const data = loadData();
     data._syncedAt = new Date().toISOString();
-    const url = getSyncUrl(cfg);
-    console.log('上传 URL:', url);
-    console.log('上传数据:', JSON.stringify(data).slice(0, 200));
-    const resp = await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    if (!resp.ok) {
-      if (resp.status === 401 || resp.status === 403) {
-        throw new Error('权限不足：请在 Firebase 中将数据库规则设为测试模式');
-      }
-      const errText = await resp.text();
-      console.error('上传响应错误:', resp.status, errText);
-      throw new Error('HTTP ' + resp.status + ': ' + errText.slice(0, 80));
+    const body = JSON.stringify(data, null, 2);
+    const headers = {
+      'Authorization': 'token ' + cfg.token,
+      'Content-Type': 'application/json',
+      'Accept': 'application/vnd.github.v3+json'
+    };
+
+    let resp, result;
+    if (cfg.gistId) {
+      // Update existing gist
+      resp = await fetch(GIST_API + '/' + cfg.gistId, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ files: { [GIST_FILENAME]: { content: body } } })
+      });
+    } else {
+      // Create new gist
+      resp = await fetch(GIST_API, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          description: '阿达木单抗注射追踪器数据',
+          public: false,
+          files: { [GIST_FILENAME]: { content: body } }
+        })
+      });
     }
-    // Verify: read back to confirm data was stored (Firebase may strip empty arrays)
-    const verify = await fetch(url);
-    let stored = await verify.json();
-    stored = normalizeCloudData(stored);
-    console.log('回读校验:', JSON.stringify(stored).slice(0, 200));
-    if (!silent) showToast('已上传到云端（' + stored.injections.length + ' 条记录）', 'success');
-    updateSyncStatus('已同步 ' + new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}));
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.message || 'HTTP ' + resp.status);
+    }
+
+    result = await resp.json();
+    // Save gist ID if newly created
+    if (!cfg.gistId) {
+      cfg.gistId = result.id;
+      saveSyncConfig(cfg);
+      const gistInput = document.getElementById('gistId');
+      if (gistInput) gistInput.value = result.id;
+    }
+
+    if (!silent) showToast('已上传到 GitHub Gist ✓', 'success');
+    updateSyncStatus('刚刚同步');
     return true;
   } catch(e) {
-    if (!silent) showToast('上传失败：' + e.message, 'error');
+    if (!silent) showToast('上传失败：' + (e.message || '请检查 Token 是否正确'), 'error');
     updateSyncStatus('同步失败');
     return false;
   }
@@ -1034,103 +1201,49 @@ async function cloudUpload(silent) {
 
 async function cloudDownload(silent) {
   const cfg = getSyncConfig();
-  if (!cfg.key || !cfg.dbUrl) {
-    if (!silent) showToast('请先设置同步密钥和数据库地址', 'error');
+  if (!cfg.token) {
+    if (!silent) showToast('请先填写 GitHub Token', 'error');
+    return false;
+  }
+  if (!cfg.gistId) {
+    if (!silent) showToast('请先填写 Gist ID，或先上传一次', 'error');
     return false;
   }
   try {
-    const resp = await fetch(getSyncUrl(cfg));
-    if (resp.status === 401 || resp.status === 403) {
-      throw new Error('权限不足：请在 Firebase 中将数据库规则设为测试模式');
+    const resp = await fetch(GIST_API + '/' + cfg.gistId, {
+      headers: {
+        'Authorization': 'token ' + cfg.token,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    if (resp.status === 404) {
+      if (!silent) showToast('找不到 Gist，请确认 Gist ID 正确', 'error');
+      return false;
     }
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const cloudData = await resp.json();
-    // Firebase returns null (not 404) for non-existent paths
-    if (cloudData === null || cloudData === undefined) {
-      if (!silent) showToast('云端暂无数据，请在电脑端先上传一次', 'error');
-      updateSyncStatus('云端无数据');
-      return false;
-    }
-    // Normalize: Firebase RTDB may strip empty arrays
-    const normalized = normalizeCloudData(cloudData);
-    if (normalized.injections.length === 0 && normalized.purchases.length === 0) {
-      if (!silent) showToast('云端暂无数据，请在电脑端先上传一次', 'error');
-      updateSyncStatus('云端无数据');
-      return false;
-    }
+    const gist = await resp.json();
+    const file = gist.files && gist.files[GIST_FILENAME];
+    if (!file) throw new Error('Gist 中没有追踪器数据文件');
+    const cloudData = JSON.parse(file.content);
+    if (!cloudData.injections || !cloudData.purchases) throw new Error('数据格式无效');
     const local = loadData();
     const merged = mergeData(local, cloudData);
     saveData(merged);
     render();
-    if (!silent) showToast('已从云端下载并合并（' + cloudData.injections.length + ' 条记录）', 'success');
-    updateSyncStatus('已同步 ' + new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}));
+    if (!silent) showToast('已从 GitHub Gist 下载并合并 ✓', 'success');
+    updateSyncStatus('刚刚同步');
     return true;
   } catch(e) {
-    if (!silent) showToast('下载失败：' + e.message, 'error');
+    if (!silent) showToast('下载失败：' + (e.message || '请检查 Token 和 Gist ID'), 'error');
     updateSyncStatus('同步失败');
     return false;
   }
 }
 
-async function testSyncConnection() {
-  const cfg = getSyncConfig();
-  if (!cfg.key || !cfg.dbUrl) {
-    showToast('请先设置同步密钥和数据库地址', 'error');
-    return;
-  }
-  updateSyncStatus('测试中...');
-  try {
-    // Use a separate test path to avoid overwriting real data
-    const base = cfg.dbUrl.replace(/\/+$/, '');
-    const testUrl = base + '/adalimumab/_test_' + Math.abs(hashCode(cfg.key)).toString(36) + '.json';
-    const ping = { _ping: new Date().toISOString() };
-    const putResp = await fetch(testUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ping)
-    });
-    if (!putResp.ok) {
-      if (putResp.status === 401 || putResp.status === 403) {
-        showToast('连接失败：请在 Firebase 中将数据库规则设为"测试模式"（允许读写）', 'error');
-      } else {
-        showToast('连接失败：HTTP ' + putResp.status + '，请检查数据库地址是否正确', 'error');
-      }
-      updateSyncStatus('连接失败');
-      return;
-    }
-    const getResp = await fetch(testUrl);
-    if (getResp.ok) {
-      showToast('连接成功！云端同步已就绪', 'success');
-      updateSyncStatus('连接正常');
-    }
-  } catch(e) {
-    showToast('连接失败：网络异常或地址不正确', 'error');
-    updateSyncStatus('连接失败');
-  }
-}
-
-function normalizeCloudData(data) {
-  // Firebase RTDB strips empty arrays, so fill in any missing fields
-  if (!data) return { injections: [], purchases: [], reminderEnabled: false };
-  if (!Array.isArray(data.injections)) data.injections = [];
-  if (!Array.isArray(data.purchases)) data.purchases = [];
-  if (typeof data.reminderEnabled !== 'boolean') data.reminderEnabled = false;
-  return data;
-}
-
-function hashCode(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h) + str.charCodeAt(i);
-    h |= 0;
-  }
-  return Math.abs(h);
-}
-
 function toggleAutoSync() {
   const cfg = getSyncConfig();
-  if (!cfg.key || !cfg.dbUrl) {
-    showToast('请先设置同步密钥和数据库地址', 'error');
+  if (!cfg.token) {
+    showToast('请先填写 GitHub Token', 'error');
     return;
   }
   cfg.autoSync = !cfg.autoSync;
@@ -1138,7 +1251,7 @@ function toggleAutoSync() {
   updateAutoSyncUI(cfg);
   if (cfg.autoSync) {
     cloudUpload(true).then(() => startAutoSync());
-    showToast('自动同步已开启（每2分钟）', 'success');
+    showToast('自动同步已开启', 'success');
   } else {
     stopAutoSync();
     showToast('自动同步已关闭', 'success');
@@ -1147,7 +1260,7 @@ function toggleAutoSync() {
 
 function triggerSyncAfterChange() {
   const cfg = getSyncConfig();
-  if (cfg.autoSync && cfg.key && cfg.dbUrl) {
+  if (cfg.autoSync && cfg.token) {
     cloudUpload(true);
   }
 }
@@ -1157,28 +1270,30 @@ function startAutoSync() {
   stopAutoSync();
   autoSyncTimer = setInterval(async () => {
     const cfg = getSyncConfig();
-    if (!cfg.autoSync || !cfg.key || !cfg.dbUrl) { stopAutoSync(); return; }
+    if (!cfg.autoSync || !cfg.token || !cfg.gistId) { stopAutoSync(); return; }
     try {
-      const resp = await fetch(getSyncUrl(cfg));
+      // Download and merge first
+      const resp = await fetch(GIST_API + '/' + cfg.gistId, {
+        headers: {
+          'Authorization': 'token ' + cfg.token,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
       if (!resp.ok) return;
-      const cloudData = await resp.json();
-      if (!cloudData || cloudData === null) return;
-      normalizeCloudData(cloudData);
+      const gist = await resp.json();
+      const file = gist.files && gist.files[GIST_FILENAME];
+      if (!file) return;
+      const cloudData = JSON.parse(file.content);
+      if (!cloudData.injections || !cloudData.purchases) return;
       const local = loadData();
       const merged = mergeData(local, cloudData);
       saveData(merged);
-      // Upload back for bidirectional sync
-      const up = loadData();
-      up._syncedAt = new Date().toISOString();
-      await fetch(getSyncUrl(cfg), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(up)
-      });
+      // Upload merged back
+      await cloudUpload(true);
       render();
       updateSyncStatus('自动同步 ' + new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}));
     } catch(e) {}
-  }, 120000);
+  }, 120000); // every 2 minutes
 }
 
 function stopAutoSync() {
@@ -1195,63 +1310,23 @@ function updateAutoSyncUI(cfg) {
   const info = document.getElementById('syncInfo');
   if (cfg.autoSync) {
     if (btn) { btn.textContent = '关闭自动同步'; btn.className = 'btn btn-danger btn-sm'; }
-    if (info) info.textContent = '每2分钟自动同步 · 记录变更后即时上传';
+    if (info) info.textContent = '每2分钟自动同步 · 修改记录后即时上传';
   } else {
     if (btn) { btn.textContent = '启用自动同步'; btn.className = 'btn btn-outline btn-sm'; }
     if (info) info.textContent = '';
   }
 }
 
-function onSyncKeyChange() {
-  const key = document.getElementById('syncKey').value.trim();
-  const cfg = getSyncConfig();
-  cfg.key = key;
-  saveSyncConfig(cfg);
-  if (!key || !cfg.dbUrl) {
-    stopAutoSync();
-    cfg.autoSync = false;
-    saveSyncConfig(cfg);
-    updateAutoSyncUI(cfg);
-    updateSyncStatus('');
-  }
-}
-
-function onDbUrlChange() {
-  const dbUrl = document.getElementById('dbUrl').value.trim();
-  const cfg = getSyncConfig();
-  cfg.dbUrl = dbUrl;
-  saveSyncConfig(cfg);
-  if (!cfg.key || !dbUrl) {
-    stopAutoSync();
-    cfg.autoSync = false;
-    saveSyncConfig(cfg);
-    updateAutoSyncUI(cfg);
-    updateSyncStatus('');
-  }
-}
-
-function toggleSetupGuide() {
-  const guide = document.getElementById('setupGuide');
-  const link = document.getElementById('setupGuideLink');
-  if (guide.style.display === 'none') {
-    guide.style.display = 'block';
-    link.textContent = '[收起指南]';
-  } else {
-    guide.style.display = 'none';
-    link.textContent = '[设置指南]';
-  }
-}
-
 function initSyncUI() {
   const cfg = getSyncConfig();
-  const keyInput = document.getElementById('syncKey');
-  const dbUrlInput = document.getElementById('dbUrl');
-  if (keyInput) keyInput.value = cfg.key;
-  if (dbUrlInput) dbUrlInput.value = cfg.dbUrl || '';
+  const tokenInput = document.getElementById('ghToken');
+  const gistInput = document.getElementById('gistId');
+  if (tokenInput && cfg.token) tokenInput.value = cfg.token;
+  if (gistInput && cfg.gistId) gistInput.value = cfg.gistId;
   updateAutoSyncUI(cfg);
-  if (cfg.autoSync && cfg.key && cfg.dbUrl) {
+  if (cfg.autoSync && cfg.token && cfg.gistId) {
     startAutoSync();
-    cloudDownload(true);
+    cloudDownload(true); // initial sync on page load
   }
 }
 
