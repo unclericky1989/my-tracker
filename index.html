@@ -164,6 +164,26 @@
     font-size: 14px;
   }
 
+  .load-more-btn {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px;
+    background: none;
+    border: 1.5px dashed var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+  }
+  .load-more-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-light);
+  }
+
   .actions-row {
     display: flex;
     gap: 8px;
@@ -490,6 +510,11 @@ const STORAGE_KEY = 'adalimumab_tracker';
 const INTERVAL_DAYS = 21;        // 三周 = 21 天
 const ORDER_REMIND_DAYS = [2, 1]; // 提前 1~2 天提醒购药
 const DOSES_PER_ORDER = 2;
+const LIST_PAGE_SIZE = 5;        // 默认每次显示条数
+
+// 列表折叠状态（不随 render 重置，用户展开后保持展开）
+let historyShowCount = LIST_PAGE_SIZE;
+let invlogShowCount  = LIST_PAGE_SIZE;
 
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -628,7 +653,9 @@ function render() {
   if (sorted.length === 0) {
     historyDiv.innerHTML = '<div class="empty-state">暂无记录，请先记录一次注射</div>';
   } else {
-    historyDiv.innerHTML = sorted.map((inj, i) => {
+    const visible = sorted.slice(0, historyShowCount);
+    const remaining = sorted.length - visible.length;
+    const items = visible.map((inj, i) => {
       const d = new Date(inj.date + 'T00:00:00');
       const extra = [inj.site, inj.note].filter(Boolean).join(' · ');
       return `
@@ -641,6 +668,12 @@ function render() {
         </div>
       `;
     }).join('');
+    const moreBtn = remaining > 0
+      ? `<button class="load-more-btn" onclick="loadMoreHistory()">▼ 加载更多（还有 ${remaining} 条）</button>`
+      : (sorted.length > LIST_PAGE_SIZE
+          ? `<button class="load-more-btn" onclick="collapseHistory()">▲ 收起</button>`
+          : '');
+    historyDiv.innerHTML = items + moreBtn;
   }
 
   // Reminder button
@@ -742,7 +775,10 @@ function renderInventoryLog(data) {
     balanceMap[e.id] = balance;
   }
 
-  div.innerHTML = events.map(e => {
+  const visibleEvents = events.slice(0, invlogShowCount);
+  const remainingEvents = events.length - visibleEvents.length;
+
+  const items = visibleEvents.map(e => {
     const d = new Date(e.date + 'T00:00:00');
     const dateStr = (d.getMonth()+1) + '/' + d.getDate();
     const bal = balanceMap[e.id];
@@ -758,6 +794,39 @@ function renderInventoryLog(data) {
       </div>
     `;
   }).join('');
+
+  const moreBtn = remainingEvents > 0
+    ? `<button class="load-more-btn" onclick="loadMoreInvlog()">▼ 加载更多（还有 ${remainingEvents} 条）</button>`
+    : (events.length > LIST_PAGE_SIZE
+        ? `<button class="load-more-btn" onclick="collapseInvlog()">▲ 收起</button>`
+        : '');
+
+  div.innerHTML = items + moreBtn;
+}
+
+// ── List folding controls ──
+function loadMoreHistory() {
+  historyShowCount += LIST_PAGE_SIZE;
+  render();
+}
+
+function collapseHistory() {
+  historyShowCount = LIST_PAGE_SIZE;
+  render();
+  const card = document.getElementById('historyList');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function loadMoreInvlog() {
+  invlogShowCount += LIST_PAGE_SIZE;
+  render();
+}
+
+function collapseInvlog() {
+  invlogShowCount = LIST_PAGE_SIZE;
+  render();
+  const card = document.getElementById('inventoryLog');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ── Actions ──
